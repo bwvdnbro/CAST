@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
 
-# Clean, serial version
-# This version is easy to parallelize because the core logic of the algorithm
-# (the part that can be done in parallel)
-# is clearly separated into a standalone function
+# Simple MPI version
+# Each rank (process) takes an equal number of files
+# all processes communicate to one process (rank 0) at the end through two collective communications
 
 import numpy as np
 import matplotlib
@@ -11,6 +10,11 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as pl
 from scipy.optimize import curve_fit
+from mpi4py import MPI
+
+comm = MPI.COMM_WORLD
+rank = comm.Get_rank()
+size = comm.Get_size()
 
 
 def sersic(r, I0, rs, n):
@@ -37,7 +41,6 @@ def fit_sersic(file):
     ndiff = (n - nexp) / nexp
     rsdiff = (rs - rsexp) / rsexp
     xi2 = ndiff**2 + rsdiff**2
-    print(f"xi2: {xi2}, ndiff: {ndiff}, rsdiff: {rsdiff}")
     return params[2], params[1]
 
 
@@ -49,13 +52,26 @@ if __name__ == "__main__":
     argparser.add_argument("output")
     args = argparser.parse_args()
 
+    nfile = len(args.input)
+    nchunk = int(nfile / size) + (
+        nfile % size > 0
+    )  # avoid missing files because of round down
+    sfile = rank * nchunk
+    efile = min((rank + 1) * nchunk, nfile)
+
     ns = []
     rss = []
-    for file in args.input:
+    for file in args.input[sfile:efile]:
         n, rs = fit_sersic(file)
-        print(file, n, rs)
+        print(rank, file, n, rs)
         ns.append(n)
         rss.append(rs)
 
-    pl.plot(ns, rss, ".")
-    pl.savefig(args.output, dpi=300)
+    print(rank, len(ns), len(rss))
+    allns = comm.gather(ns, root=0)
+    allrss = comm.gather(rss, root=0)
+    if rank == 0:
+        ns = [e for es in allns for e in es]
+        rss = [e for es in allrss for e in es]
+        pl.plot(ns, rss, ".")
+        pl.savefig(args.output, dpi=300)

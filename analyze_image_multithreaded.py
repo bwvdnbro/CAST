@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
 
-# Clean, serial version
-# This version is easy to parallelize because the core logic of the algorithm
-# (the part that can be done in parallel)
-# is clearly separated into a standalone function
+# Multithreaded version
+# Severly handicaped because of Global Interpreter Lock, which introduces a lock into the Python interpreter
+# itself at a very deep level
 
 import numpy as np
 import matplotlib
@@ -11,6 +10,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as pl
 from scipy.optimize import curve_fit
+from concurrent.futures import ThreadPoolExecutor
 
 
 def sersic(r, I0, rs, n):
@@ -49,13 +49,10 @@ if __name__ == "__main__":
     argparser.add_argument("output")
     args = argparser.parse_args()
 
-    ns = []
-    rss = []
-    for file in args.input:
-        n, rs = fit_sersic(file)
-        print(file, n, rs)
-        ns.append(n)
-        rss.append(rs)
+    with ThreadPoolExecutor(16) as e:
+        nrs = list(e.map(fit_sersic, args.input))
+    ns = [e[0] for e in nrs]
+    rss = [e[1] for e in nrs]
 
     pl.plot(ns, rss, ".")
     pl.savefig(args.output, dpi=300)
