@@ -25,21 +25,45 @@ def read_fits(input_name):
     hdul = fits.open(input_name)
     w = wcs.WCS(hdul[0].header)
     distance = hdul[0].header["DISTANCE"] * u.Mpc
+    dax = w.wcs.cdelt[0] * u.degree
+    day = w.wcs.cdelt[1] * u.degree
+    dx = (dax.to(u.radian) * distance).to(u.kpc, equivalencies=u.dimensionless_angles())
+    dy = (day.to(u.radian) * distance).to(u.kpc, equivalencies=u.dimensionless_angles())
 
-    p = w.pixel_to_world([[0, 0], [1, 1]], [0, 0])
-    dangle = p[1][0].ra - p[0][0].ra
-    dx = ((dangle / u.radian) * distance).to(u.kpc)
-
-    imgcoord = np.linspace(0.0, dx * w.array_shape[0], w.array_shape[0])
-    imgcoord -= 0.5 * dx * w.array_shape[0]
-    imgx, imgy = np.meshgrid(imgcoord, imgcoord)
+    ny, nx = hdul[0].data.shape
+    imgcoordx = np.linspace(0.0, dx * nx, nx) - 0.5 * dx * nx
+    imgcoordy = np.linspace(0.0, dy * ny, ny) - 0.5 * dy * ny
+    imgx, imgy = np.meshgrid(imgcoordx, imgcoordy)
 
     return imgx, imgy, hdul[0].data
 
 
+counter = 0
+
+
 def fit_sersic(file):
+    global counter
     imgx, imgy, img = read_fits(file)
     r = np.sqrt(imgx**2 + imgy**2)
+    if False:
+        data = np.load(file.replace(".fits", ".npz"))
+        imgx2 = data["x"]
+        imgy2 = data["y"]
+        pl.plot(imgx2.flatten(), imgx.flatten(), ".")
+        pl.plot(
+            [imgx2.flatten().min(), imgx2.flatten().max()],
+            [imgx2.flatten().min(), imgx2.flatten().max()],
+            "-",
+        )
+        pl.plot(imgy2.flatten(), imgy.flatten(), ".")
+        pl.plot(
+            [imgy2.flatten().min(), imgy2.flatten().max()],
+            [imgy2.flatten().min(), imgy2.flatten().max()],
+            "-",
+        )
+        pl.savefig(f"test_{counter:03d}.png", dpi=300)
+        counter += 1
+        pl.close()
     params, _ = curve_fit(
         sersic,
         r.flatten(),
